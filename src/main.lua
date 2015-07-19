@@ -7,31 +7,8 @@ local component = require("component")
 local fs = require("filesystem")
 local io = require("io")
 local term = require("term")
-
--- convert a 32-bit two's complement integer into a four bytes (network order)
-local function int_to_bytes(n)
-  if n > 2147483647 then error(n.." is too large",2) end
-  if n < -2147483648 then error(n.." is too small",2) end
-  -- adjust for 2's complement
-  n = (n < 0) and (4294967296 + n) or n
-  return (math.modf(n/16777216))%256, (math.modf(n/65536))%256, (math.modf(n/256))%256, n%256
-end
-
--- convert bytes (network order) to a 32-bit two's complement integer
-local function bytes_to_int(b1, b2, b3, b4)
-  if not b4 then error("need four bytes to convert to int",2) end
-  local n = b1*16777216 + b2*65536 + b3*256 + b4
-  n = (n > 2147483647) and (n - 4294967296) or n
-  return n
-end
-
-local function readBinaryInt(address)
-  local b1 = string.byte(component.invoke(address, "read", 1))
-  local b2 = string.byte(component.invoke(address, "read", 1))
-  local b3 = string.byte(component.invoke(address, "read", 1))
-  local b4 = string.byte(component.invoke(address, "read", 1))
-  return bytes_to_int(b1, b2, b3, b4)
-end
+local binary = require("binarytape")
+local fmt = require("formatter")
 
 local fileTypes = {
   "music", -- 1
@@ -58,8 +35,8 @@ function medic.proxy(address)
     term.write("found file with name length of "..namelen.."\n")
     if namelen>0 then
       local filename = component.invoke(address, "read", namelen)
-      local filestart = readBinaryInt(address)
-      local filesize = readBinaryInt(address)
+      local filestart = binary.readBinaryInt(address)
+      local filesize = binary.readBinaryInt(address)
       local filetype = string.byte(component.invoke(address, "read", 1))
       
       filetable[filename] = {}
@@ -68,7 +45,6 @@ function medic.proxy(address)
       filetable[filename].type = fileTypes[filetype]
       
       term.write("file "..filename.." added to medicfs!\n")
-      --component.invoke(address, "seek", filestart + filesize)
     else
       break
     end
@@ -257,74 +233,9 @@ function medic.proxy(address)
   return proxy
 end
 
-function format(address)
-  local offset = 0
-  -- rewind
-  component.invoke(address, "seek", -math.huge)
-  -- write header start
-  component.invoke(address, "write", "M001")
-  offset = offset + 4
-  
-  -- write hello world file
-  -- file name length
-  component.invoke(address, "write", string.char(12))
-  offset = offset + 1
-  -- file name
-  component.invoke(address, "write", "hello world!")
-  offset = offset + 12
-  -- file offset
-  local b1, b2, b3, b4 = int_to_bytes(offset+13)
-  component.invoke(address, "write", string.char(b1)..string.char(b2)..string.char(b3)..string.char(b4))
-  offset = offset + 4
-  -- file length
-  local b1, b2, b3, b4 = int_to_bytes(11)
-  component.invoke(address, "write", string.char(b1)..string.char(b2)..string.char(b3)..string.char(b4))
-  offset = offset + 4
-  -- file type
-  component.invoke(address, "write", "\3")
-  
-  -- write second hello world file
-  -- file name length
-  component.invoke(address, "write", string.char(9))
-  offset = offset + 1
-  -- file name
-  component.invoke(address, "write", "testfile2")
-  offset = offset + 12
-  -- file offset
-  local b1, b2, b3, b4 = int_to_bytes(256)
-  component.invoke(address, "write", string.char(b1)..string.char(b2)..string.char(b3)..string.char(b4))
-  offset = offset + 4
-  -- file length
-  local b1, b2, b3, b4 = int_to_bytes(17)
-  component.invoke(address, "write", string.char(b1)..string.char(b2)..string.char(b3)..string.char(b4))
-  offset = offset + 4
-  -- file type
-  component.invoke(address, "write", "\3")
-  
-  -- write end of directory
-  component.invoke(address, "write", "\0")
-  offset = offset + 1
-  -- write end of filesystem
-  component.invoke(address, "write", "BYE")
-  offset = offset + 3
-  -- file contents
-  component.invoke(address, "write", "sosi chlen!")
-  -- rewind
-  component.invoke(address, "seek", -math.huge)
-  
-  
-  -- rewind
-  component.invoke(address, "seek", -math.huge)
-  component.invoke(address, "seek", 256)
-  -- file contents
-  component.invoke(address, "write", "second test file!")
-  -- rewind
-  component.invoke(address, "seek", -math.huge)
-end
-
 for k,v in component.list() do
   if v=="tape_drive" then
-    format(k)
+    fmt.format(k)
     term.write("format succeeded\n")
     fs.mount(medic.proxy(k),"/medic")
     term.write("mount succeeded\n")
