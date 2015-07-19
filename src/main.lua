@@ -1,4 +1,4 @@
--- MEDIC: a multiMEdia DIgital Cassette file system
+-- MEDIC: a media cassette file system
 local medic = {}
 local proxy = {}
 local filedescr = {}
